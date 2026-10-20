@@ -114,6 +114,7 @@ button:focus-visible,input:focus-visible{outline:4px solid var(--accent);outline
 @keyframes drain{to{transform:scaleX(0)}}
 .result{padding-bottom:20px}
 .result .next:active{transform:translateY(3px);box-shadow:0 1px 0 var(--navy)}
+.mute.micb{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 .mute{position:fixed;right:max(14px,env(safe-area-inset-right,0px));bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:40;width:56px;height:56px;border-radius:50%;background:var(--accent);border:3px solid var(--navy);box-shadow:0 5px 0 var(--navy);display:grid;place-items:center;color:var(--navy)}
 .mute:active{transform:translateY(4px);box-shadow:0 1px 0 var(--navy)}
 .mute svg{width:28px;height:28px}
@@ -133,6 +134,7 @@ button:focus-visible,input:focus-visible{outline:4px solid var(--accent);outline
 </style></head><body>
 <div class="deco" aria-hidden="true"><span style="left:4%;top:8%;font-size:5rem">★</span><span style="right:6%;top:22%;font-size:6rem">?</span><span style="left:8%;top:52%;font-size:4rem">?</span><span style="right:4%;top:66%;font-size:5rem">★</span><span style="left:46%;top:88%;font-size:4rem">?</span><span style="left:70%;top:4%;font-size:3rem">★</span></div>
 <canvas id="confetti" aria-hidden="true"></canvas>
+<button class="mute micb" id="micb" aria-label="Microphone on or off"></button>
 <button class="mute" id="mute" aria-label="Music on or off"></button>
 
 <div class="wrap" id="app"></div>
@@ -142,11 +144,11 @@ const FLAGS = [{"c":"af","n":"Afghanistan","a":[],"t":"hard","s":"data:image/svg
 const TIERS = {
   easy:{label:"Easy",c:"var(--easy)",blurb:"The ones everyone knows. Pick from 4."},
   medium:{label:"Medium",c:"var(--medium)",blurb:"Trickier lookalikes. Pick from 4."},
-  hard:{label:"Hard",c:"var(--hard)",blurb:"No choices. Say it or type it."},
+  hard:{label:"Hard",c:"var(--hard)",blurb:"No choices. Type it in."},
   impossible:{label:"Impossible",c:"var(--impossible)",blurb:"Tiny islands and deep cuts. Good luck."}
 };
 const POOL = {easy:["easy"],medium:["medium"],hard:["hard"],impossible:["impossible"]};
-const S = {diff:"easy",rounds:10,voice:true,deck:[],i:0,score:0,streak:0,correct:0,missed:[],answered:false,hinted:false,heard:""};
+const S = {diff:"easy",rounds:10,voice:(()=>{try{return localStorage.getItem("fp-voice")!=="off"}catch(e){return true}})(),deck:[],i:0,score:0,streak:0,correct:0,missed:[],answered:false,hinted:false,heard:""};
 const $ = s=>document.querySelector(s);
 const app = $("#app");
 
@@ -220,7 +222,7 @@ function startVoice(){
     };
     rec.onerror=e=>{
       if(e.error==="not-allowed"||e.error==="service-not-allowed"){
-        S.voice=false; recOn=false;
+        S.voice=false; recOn=false; paintMicBtn();
         voiceMsg="Mic blocked here. Download the file and open it in Chrome or Edge to use voice.";
         renderMic();
       }
@@ -228,6 +230,20 @@ function startVoice(){
     rec.onend=()=>{recOn=false; if(S.voice && document.body.dataset.screen==="game") setTimeout(startVoice,250); renderMic();};
     rec.start(); recOn=true; renderMic();
   }catch(err){recOn=false}
+}
+function setVoice(v){
+  S.voice=v; voiceMsg=""; try{localStorage.setItem("fp-voice",v?"on":"off")}catch(e){}
+  paintMicBtn();
+  const scr=document.body.dataset.screen;
+  if(scr==="start") startScreen();
+  if(scr==="game"){ v?startVoice():stopVoice(); renderMic(); }
+  Music.setLevel();
+}
+function paintMicBtn(){
+  const b=document.getElementById("micb"); if(!b) return;
+  b.hidden=!SR; b.classList.toggle("off",!S.voice); b.setAttribute("aria-pressed",String(S.voice));
+  b.title=S.voice?"Mic on: tap to turn off":"Mic off: tap to turn on";
+  b.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"'+(S.voice?' fill="currentColor"':'')+'/><path d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8"/>'+(S.voice?'':'<path d="M3 3l18 18"/>')+'</svg>';
 }
 function stopVoice(){recOn=false; try{rec&&rec.stop()}catch(e){}}
 function onSpeech(text,final){
@@ -241,8 +257,8 @@ function setHeard(t){S.heard=t; const q=$("#heard"); if(q) q.textContent=t}
 function renderMic(){
   const m=$("#mic"); if(!m) return;
   if(!SR){m.className="mic";m.innerHTML='<span class="dot"></span><span>Voice needs Chrome or Edge. Typing works everywhere.</span>';return}
-  if(voiceMsg){m.className="mic";m.innerHTML='<span class="dot"></span><span>'+voiceMsg+'</span>';return}
-  if(!S.voice){m.className="mic";m.innerHTML='<span class="dot"></span><span>Voice is off</span>';return}
+  if(voiceMsg){m.hidden=false;m.className="mic";m.innerHTML='<span class="dot"></span><span>'+voiceMsg+'</span>';return}
+  m.hidden=!S.voice; if(!S.voice) return;
   m.className="mic"+(recOn?" on":"");
   m.innerHTML='<span class="dot"></span><span>'+(recOn?"Listening — shout the country!":"Starting mic…")+'</span><q id="heard"></q>';
   if(S.heard) $("#heard").textContent=S.heard;
@@ -264,7 +280,7 @@ function startScreen(){
   <div class="label">Difficulty</div>
   <div class="diffs">${Object.entries(TIERS).map(([k,t])=>`
     <button class="diff" style="--c:${t.c}" data-d="${k}" aria-pressed="${S.diff===k}">
-      <b>${t.label}</b><small>${t.blurb}</small><span class="n">${pool(k).length} flags</span>
+      <b>${t.label}</b><small>${k==="hard"&&S.voice&&SR?"No choices. Say it or type it.":t.blurb}</small><span class="n">${pool(k).length} flags</span>
     </button>`).join("")}</div>
   <div class="opts chunk">
     <div class="opt"><span class="label">Flags per game</span>
@@ -276,7 +292,7 @@ function startScreen(){
   <button class="big" id="go">Start</button>`;
   app.querySelectorAll(".diff").forEach(b=>b.onclick=()=>{S.diff=b.dataset.d;startScreen()});
   app.querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{S.rounds=+b.dataset.r;startScreen()});
-  $("#vt").onclick=()=>{S.voice=!S.voice;voiceMsg="";startScreen()};
+  $("#vt").onclick=()=>setVoice(!S.voice);
   $("#go").onclick=newGame;
 }
 function newGame(){
@@ -433,6 +449,8 @@ const Music=(()=>{
   return {start,stop,sfx,toggle,paint,setLevel,get on(){return on}};
 })();
 Music.paint();
+paintMicBtn();
+document.getElementById("micb").onclick=e=>{e.stopPropagation();setVoice(!S.voice)};
 document.getElementById("mute").onclick=e=>{e.stopPropagation();Music.toggle()};
 // Browsers only allow sound after a tap, so the song kicks in on the first click anywhere.
 document.addEventListener("pointerdown",()=>Music.start(),{once:true});
